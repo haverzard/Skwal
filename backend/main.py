@@ -1,99 +1,131 @@
+'''
+Skwal websocket application backend
+'''
 import asyncio
 import json
-import logging
 import random
 import websockets
 
-#logging.basicConfig()
-
-animals = list(map(lambda x: x.replace('\n','').strip(), open("animals.txt").readlines()))
-users = {}
-state = {"content": {"ops": []}, "text": ""}
+ANIMALS = list(map(lambda x: x.replace('\n', '').strip(), open("animals.txt").readlines()))
+USERS = {}
+DOC_STATE = {"content": {"ops": []}, "text": ""}
 
 def state_event():
-    return json.dumps({"type": "text", **state})
+    '''
+    Preparing document state
+    '''
+    return json.dumps({"type": "text", **DOC_STATE})
 
 def users_event(websocket):
+    '''
+    Preparing users' status
+    '''
     res = []
-    for i in users.keys():
-        if (i != websocket):
-            res.append(users[i])
-    return json.dumps({"type": "users", "users": res, "mydata": users[websocket]})
+    for i in USERS:
+        if i != websocket:
+            res.append(USERS[i])
+    return json.dumps({"type": "users", "users": res, "mydata": USERS[websocket]})
 
 def handle_cursors(websocket, data):
-    for i in users.keys():
-        if (i != websocket):
+    '''
+    Handling cursors' movement because of write
+    '''
+    for i in USERS:
+        if i != websocket:
             # If writer position is behind me
-            if users[i]['position']['index'] > data['position']['index']:
+            if USERS[i]['position']['index'] > data['position']['index']:
                 # Take length into account
-                delta = (data['position']['index']+data['position']['length']) - users[i]['position']['index']
-                users[i]['position']['index'] += len(data["text"]) - len(state["text"])
+                delta = (data['position']['index']+data['position']['length'])
+                delta -= USERS[i]['position']['index']
+                USERS[i]['position']['index'] += len(data["text"]) - len(DOC_STATE["text"])
                 # If writer position + length involve my selection and if I have a selection length,
                 # decrease the ones that got involved and increase my delta
-                if delta > 0 and users[i]['position']['length']:
-                    users[i]['position']['length'] -= delta
-                    users[i]['position']['index'] += delta
+                if delta > 0 and USERS[i]['position']['length']:
+                    USERS[i]['position']['length'] -= delta
+                    USERS[i]['position']['index'] += delta
             else:
-                if (users[i]['position']['length']+users[i]['position']['index']) > (data['position']['index']+data['position']['length']):
-                    users[i]['position']['length'] += len(data["text"]) - len(state["text"])
-                elif (users[i]['position']['length']+users[i]['position']['index']) < (data['position']['index']+data['position']['length']):
-                    t = (users[i]['position']['length']+users[i]['position']['index']) - data['position']['index']
-                    if t > 0:
-                        users[i]['position']['length'] -= t
+                if ((USERS[i]['position']['length']+USERS[i]['position']['index'])
+                        > (data['position']['index']+data['position']['length'])):
+                    USERS[i]['position']['length'] += len(data["text"]) - len(DOC_STATE["text"])
+                elif ((USERS[i]['position']['length']+USERS[i]['position']['index'])
+                      < (data['position']['index']+data['position']['length'])):
+                    delta = (USERS[i]['position']['length']+USERS[i]['position']['index'])
+                    delta -= data['position']['index']
+                    if delta > 0:
+                        USERS[i]['position']['length'] -= delta
                 else:
-                    t = len(data["text"]) - len(state["text"])
-                    if t < 0:
-                        users[i]['position']['length'] += t
+                    delta = len(data["text"]) - len(DOC_STATE["text"])
+                    if delta < 0:
+                        USERS[i]['position']['length'] += delta
             # Just in case
-            if users[i]['position']['index'] < 0:
-                users[i]['position']['index'] = 0
+            if USERS[i]['position']['index'] < 0:
+                USERS[i]['position']['index'] = 0
 
 async def broadcast_state():
-    if users:
+    '''
+    Broadcast document state
+    '''
+    if USERS:
         message = state_event()
-        await asyncio.wait([user.send(message) for user in users.keys()])
+        await asyncio.wait([user.send(message) for user in USERS])
 
-async def broadcast_users(websocket):
-    if users:
-        await asyncio.wait([user.send(users_event(user)) for user in users.keys()])
+async def broadcast_users():
+    '''
+    Broadcast users' status
+    '''
+    if USERS:
+        await asyncio.wait([user.send(users_event(user)) for user in USERS])
 
 async def register(websocket):
-    users[websocket] = {
-        'name': 'Anonymous {}'.format(random.choice(animals)),
-        'position': { 'index': 0, 'length': 0 },
-        'color': '#{:2x}{:2x}{:2x}'.format(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)).replace(' ', '0')
+    '''
+    Add a user when he/she joins
+    '''
+    USERS[websocket] = {
+        'name': 'Anonymous {}'.format(random.choice(ANIMALS)),
+        'position': {'index': 0, 'length': 0},
+        'color': '#{:2x}{:2x}{:2x}'.format(
+            random.randint(0, 255),
+            random.randint(0, 255),
+            random.randint(0, 255)
+        ).replace(' ', '0')
     }
 
 async def unregister(websocket):
-    users.pop(websocket, None)
-    await broadcast_users(websocket)
+    '''
+    Remove a user when he/she leaves
+    '''
+    USERS.pop(websocket, None)
+    await broadcast_users()
 
-async def texteditor(websocket, path):
+async def texteditor(websocket):
+    '''
+    A text editor websocket application
+    '''
+    print('A user has connected to the server')
     await register(websocket)
     try:
         await websocket.send(state_event())
-        await broadcast_users(websocket)
+        await broadcast_users()
         async for message in websocket:
             data = json.loads(message)
             if data["action"] == "move":
                 # Updating cursor position and tell others about it
-                users[websocket]['position'] = data["position"]
-                await broadcast_users(websocket)
+                USERS[websocket]['position'] = data["position"]
+                await broadcast_users()
             elif data["action"] == "write":
                 # Handling cursor movement because of write
                 handle_cursors(websocket, data)
                 # Updating data
-                state["text"] = data["text"]
-                state["content"] = data["content"]
-                # Tell users
+                DOC_STATE["text"] = data["text"]
+                DOC_STATE["content"] = data["content"]
+                # Tell USERS
                 await broadcast_state()
-                await broadcast_users(websocket)
-            # else:
-            #     logging.error("unsupported event: {}", data)
+                await broadcast_users()
     finally:
+        print('A user has left the server')
         await unregister(websocket)
 
-server = websockets.serve(texteditor, "localhost", 6789)
+SERVER = websockets.serve(texteditor, "localhost", 6789)
 
-asyncio.get_event_loop().run_until_complete(server)
+asyncio.get_event_loop().run_until_complete(SERVER)
 asyncio.get_event_loop().run_forever()
