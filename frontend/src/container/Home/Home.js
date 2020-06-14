@@ -6,6 +6,7 @@ import 'quill/dist/quill.snow.css'
 import logo from './doc.svg'
 import './App.css'
 
+const host = process.env.REACT_APP_SKWAL_WEBSOCKET_HOST || 'ws://127.0.0.1:6789/'
 export default class Home extends React.Component {
     constructor(props) {
         super(props)
@@ -26,7 +27,7 @@ export default class Home extends React.Component {
         })
         const cursors = quill.getModule('cursors')
         this.state.old = quill.getContents()
-        let websocket = new WebSocket("ws://127.0.0.1:6789/")
+        let websocket = new WebSocket(host)
         let myCallback = (pos) => {
             if (this.state.old != quill.getContents()) {
                 this.setState({ old : quill.getContents() })
@@ -52,7 +53,6 @@ export default class Home extends React.Component {
             if (data.type == 'text') {
                 this.setState({ writing: true })
                 quill.setContents(data.content, 'silent')
-                console.log(this.state.pos)
                 quill.setSelection(this.state.pos)
                 this.setState({ writing: false })
             } else if (data.type == 'users') {

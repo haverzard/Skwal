@@ -97,7 +97,7 @@ async def unregister(websocket):
     USERS.pop(websocket, None)
     await broadcast_users()
 
-async def texteditor(websocket):
+async def texteditor(websocket, _):
     '''
     A text editor websocket application
     '''
@@ -125,7 +125,7 @@ async def texteditor(websocket):
         print('A user has left the server')
         await unregister(websocket)
 
-SERVER = websockets.serve(texteditor, "localhost", 6789)
+SERVER = websockets.serve(texteditor, "0.0.0.0", 6789)
 
 asyncio.get_event_loop().run_until_complete(SERVER)
 asyncio.get_event_loop().run_forever()
