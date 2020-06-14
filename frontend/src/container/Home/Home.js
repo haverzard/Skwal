@@ -1,6 +1,8 @@
 /* eslint-disable */
 import React from 'react'
-import { escapeHtml } from '../../util.js'
+import Quill from 'quill'
+import QuillCursors from 'quill-cursors'
+import 'quill/dist/quill.snow.css'
 import logo from './doc.svg'
 import './App.css'
 
@@ -15,25 +17,29 @@ export default class Home extends React.Component {
     }
 
     componentDidMount() {
-        var quill = new Quill('#editor', {
-            theme: 'snow'
+        Quill.register('modules/cursors', QuillCursors)
+        const quill = new Quill('#editor', {
+            theme: 'snow',
+            modules: {
+                cursors: true,
+            }
         })
+        const cursors = quill.getModule('cursors')
         this.state.old = quill.getContents()
         let websocket = new WebSocket("ws://127.0.0.1:6789/")
         let myCallback = () => {
             if (this.state.old != quill.getContents()) {
                 this.setState({ old : quill.getContents() })
-                websocket.send(JSON.stringify({'action': 'write', 'content': quill.getContents() }))
+                websocket.send(JSON.stringify({'action': 'write', 'content': quill.getContents(), 'text': quill.getText() }))
             }
         }
         quill.on('editor-change',  (eventName, ...args) => {
             if (eventName === 'text-change') {
                 if (!this.state.writing) {
-                    if (args[0].ops[1] && args[0].ops[1].insert == '\n') quill.setSelection({ index: this.state.pos.index+1, length: this.state.pos.length })
                     myCallback()
                 }
             } else if (eventName === 'selection-change') {
-                if (!this.state.writing) {
+                if (!this.state.writing && args[0]) {
                     console.log(args[0])
                     this.setState({ pos : args[0] })
                     websocket.send(JSON.stringify({'action': 'move', 'position': this.state.pos}))
@@ -45,13 +51,19 @@ export default class Home extends React.Component {
             let data = JSON.parse(e.data)
             if (data.type == 'text') {
                 this.setState({ writing: true })
-                console.log(data.text)
-                quill.setContents(data.text, 'silent')
+                quill.setContents(data.content, 'silent')
                 console.log(this.state.pos)
-                //quill.setSelection(this.state.pos)
+                quill.setSelection(this.state.pos)
                 this.setState({ writing: false })
             } else if (data.type == 'users') {
-                quill.setSelection(data.mydata.position)                
+                cursors.clearCursors()
+                for (let i = 0; i < data.users.length; i++) {
+                    cursors.createCursor(i, data.users[i].name, 'red')
+                    cursors.moveCursor(i, data.users[i].position)
+                }
+                this.setState({ writing: true })
+                quill.setSelection(data.mydata.position)
+                this.setState({ writing: false })           
             }
         }
     }
