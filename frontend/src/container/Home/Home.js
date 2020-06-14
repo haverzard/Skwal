@@ -27,26 +27,26 @@ export default class Home extends React.Component {
         const cursors = quill.getModule('cursors')
         this.state.old = quill.getContents()
         let websocket = new WebSocket("ws://127.0.0.1:6789/")
-        let myCallback = () => {
+        let myCallback = (pos) => {
             if (this.state.old != quill.getContents()) {
                 this.setState({ old : quill.getContents() })
-                websocket.send(JSON.stringify({'action': 'write', 'content': quill.getContents(), 'text': quill.getText() }))
+                websocket.send(JSON.stringify({'action': 'write', 'content': quill.getContents(), 'text': quill.getText(), 'position': pos }))
             }
         }
+        let tempPos = {...this.state.pos}
         quill.on('editor-change',  (eventName, ...args) => {
             if (eventName === 'text-change') {
                 if (!this.state.writing) {
-                    myCallback()
+                    myCallback(tempPos)
                 }
             } else if (eventName === 'selection-change') {
                 if (!this.state.writing && args[0]) {
-                    console.log(args[0])
+                    tempPos = {...this.state.pos}
                     this.setState({ pos : args[0] })
                     websocket.send(JSON.stringify({'action': 'move', 'position': this.state.pos}))
                 }
             }
           })
-        //H<span style={{borderLeft: "1px solid red"}}></span>i
         websocket.onmessage = (e) => {
             let data = JSON.parse(e.data)
             if (data.type == 'text') {
@@ -58,12 +58,12 @@ export default class Home extends React.Component {
             } else if (data.type == 'users') {
                 cursors.clearCursors()
                 for (let i = 0; i < data.users.length; i++) {
-                    cursors.createCursor(i, data.users[i].name, 'red')
+                    cursors.createCursor(i, data.users[i].name, data.users[i].color)
                     cursors.moveCursor(i, data.users[i].position)
                 }
                 this.setState({ writing: true })
                 quill.setSelection(data.mydata.position)
-                this.setState({ writing: false })           
+                this.setState({ writing: false })
             }
         }
     }
