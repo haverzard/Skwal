@@ -126,12 +126,10 @@ async def texteditor(websocket, _):
                 await broadcast_users()
             elif data["action"] == "write":
                 # Handling cursor movement because of write
-                #handle_cursors(websocket, data)
                 # Updating data
                 DOC_STATE["text"] = data["text"]
                 DOC_STATE["content"] = data["content"]
                 # Tell USERS
-                # await broadcast_state()
                 await broadcast_delta(data["delta"], websocket)
                 await broadcast_users()
     finally:
