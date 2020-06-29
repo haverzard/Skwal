@@ -76,11 +76,11 @@ async def broadcast_users():
     if USERS:
         await asyncio.wait([user.send(users_event(user)) for user in USERS])
 
-async def broadcast_delta(delta, websocket):
+async def broadcast_delta(data, websocket):
     '''
     Broadcast delta information
     '''
-    info = json.dumps({"type": "delta", "content": delta})
+    info = json.dumps({"type": "delta", "content": data["delta"], "real": data["real"]})
     loader = []
     for user in USERS:
         if user != websocket:
@@ -127,11 +127,9 @@ async def texteditor(websocket, _):
             elif data["action"] == "write":
                 # Handling cursor movement because of write
                 # Updating data
-                DOC_STATE["text"] = data["text"]
                 DOC_STATE["content"] = data["content"]
                 # Tell USERS
-                await broadcast_delta(data["delta"], websocket)
-                await broadcast_users()
+                await broadcast_delta(data, websocket)
     finally:
         print('A user has left the server')
         await unregister(websocket)

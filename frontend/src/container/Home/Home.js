@@ -2,6 +2,7 @@
 import React from 'react'
 import Quill from 'quill'
 import QuillCursors from 'quill-cursors'
+import Delta from 'quill-delta'
 import 'quill/dist/quill.snow.css'
 import logo from './doc.svg'
 import './App.css'
@@ -23,23 +24,28 @@ export default class Home extends React.Component {
         const quill = new Quill('#editor', {
             theme: 'snow',
             modules: {
-                cursors: true,
+                cursors: {
+                    hideDelayMs: 5000,
+                    hideSpeedMs: 0,
+                    selectionChangeSource: null,
+                    transformOnTextChange: true,
+                },
             }
         })
         const cursors = quill.getModule('cursors')
         this.state.old = quill.getContents()
         let websocket = new WebSocket(host)
-        let myCallback = (pos, delta) => {
+        let myCallback = (pos, args) => {
             if (this.state.old != quill.getContents()) {
                 this.setState({ old : quill.getContents() })
-                websocket.send(JSON.stringify({'action': 'write', 'delta': delta, 'content': quill.getContents(), 'text': quill.getText(), 'position': pos }))
+                websocket.send(JSON.stringify({'action': 'write', 'delta': args[0], 'real': args[1], 'content': quill.getContents(), 'position': pos }))
             }
         }
         let tempPos = {...this.state.pos}
         quill.on('editor-change',  (eventName, ...args) => {
             if (eventName === 'text-change') {
-                if (!this.state.writing) {
-                    myCallback(tempPos, args[0])
+                if (!this.state.writing && !this.state.delta) {
+                    myCallback(tempPos, args)
                 }
             } else if (eventName === 'selection-change') {
                 if (!this.state.writing && args[0] || this.state.delta) {
@@ -59,7 +65,19 @@ export default class Home extends React.Component {
             } else if (data.type == 'delta') {
                 this.setState({ writing: true })
                 this.setState({ delta: true })
-                quill.updateContents(data.content, 'silent')
+                const delta = new Delta(data.real)
+                let diff = delta.diff(quill.getContents())
+                if (diff.ops.length && diff.ops[0].retain && data.content.ops[0].retain && diff.ops[0].retain < data.content.ops[0].retain) {
+                    let old = data.content.ops[0].retain
+                    let move = diff.transformPosition(data.content.ops[0].retain)
+                    while (move != old) {
+                        let diff = delta.diff(quill.getContents())
+                        old = move
+                        move = diff.transformPosition(data.content.ops[0].retain)
+                    }
+                    data.content.ops[0].retain = move
+                }
+                quill.updateContents(data.content, 'api')
                 this.setState({ delta: false })
                 this.setState({ writing: false })
             } else if (data.type == 'users') {
